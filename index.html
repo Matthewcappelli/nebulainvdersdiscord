@@ -59,12 +59,19 @@
         </div>
 
         <div class="discord">
-          <h2>Discord Ready</h2>
-          <p>Host this folder and use the URL as a Discord Activity URL, or drop the link in a server for instant play.</p>
+          <h2>Discord</h2>
+          <p id="playerStatus">Playing as Guest</p>
+        </div>
+
+        <div class="leaderboard">
+          <h2>Leaderboard</h2>
+          <ol id="leaderboardList">
+            <li>Loading scores...</li>
+          </ol>
         </div>
       </aside>
     </main>
 
-    <script src="src/game.js?v=sakura-20260528"></script>
+    <script type="module" src="src/game.js?v=leaderboard-20260528"></script>
   </body>
 </html>

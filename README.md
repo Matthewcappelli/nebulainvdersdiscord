@@ -21,6 +21,17 @@ Use these hosted pages for Discord verification:
 - Terms of Service: `/terms.html`
 - Privacy Policy: `/privacy.html`
 
+## Leaderboard setup
+
+The shared leaderboard uses Discord Activity authentication. Set these Railway variables:
+
+```txt
+DISCORD_CLIENT_ID=1509412850450567248
+DISCORD_CLIENT_SECRET=your Discord OAuth2 Client Secret
+```
+
+The client ID is public. Never commit the client secret to GitHub.
+
 ## Controls
 
 - Move: `A` / `D` or arrow keys

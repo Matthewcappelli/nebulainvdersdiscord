@@ -7,15 +7,21 @@ const waveEl = document.querySelector("#wave");
 const livesEl = document.querySelector("#lives");
 const bestEl = document.querySelector("#best");
 const touchKeys = document.querySelectorAll(".touch-key");
+const playerStatusEl = document.querySelector("#playerStatus");
+const leaderboardListEl = document.querySelector("#leaderboardList");
 
 const WIDTH = canvas.width;
 const HEIGHT = canvas.height;
+const DISCORD_SDK_URL = "https://esm.sh/@discord/embedded-app-sdk@1.10.0";
 const keys = new Set();
 const petals = Array.from({ length: 130 }, () => makePetal(true));
 
 let state;
 let lastTime = 0;
 let best = Number(localStorage.getItem("sakuraInvadersBest") || 0);
+let discordSdk = null;
+let auth = null;
+let discordConfig = null;
 bestEl.textContent = best;
 
 function makePetal(randomY = false) {
@@ -248,6 +254,7 @@ function endGame() {
     localStorage.setItem("sakuraInvadersBest", String(best));
   }
   updateHud();
+  submitScore(state.score);
   overlay.querySelector("h1").textContent = "Garden overrun";
   overlay.querySelector("p").textContent = `Score ${state.score}. Wave ${state.wave}.`;
   startButton.textContent = "Play Again";
@@ -428,5 +435,114 @@ touchKeys.forEach((button) => {
   button.addEventListener("pointerleave", release);
 });
 
+async function setupDiscord() {
+  try {
+    discordConfig = await fetchJson("/api/config");
+    if (!isDiscordActivity()) {
+      playerStatusEl.textContent = "Playing as Guest";
+      return;
+    }
+
+    const { DiscordSDK } = await import(DISCORD_SDK_URL);
+    discordSdk = new DiscordSDK(discordConfig.discordClientId);
+    await discordSdk.ready();
+
+    const { code } = await discordSdk.commands.authorize({
+      client_id: discordConfig.discordClientId,
+      response_type: "code",
+      state: "",
+      prompt: "none",
+      scope: ["identify"]
+    });
+
+    const { access_token: accessToken } = await fetchJson("/api/token", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code })
+    });
+
+    auth = await discordSdk.commands.authenticate({ access_token: accessToken });
+    if (!auth?.user) throw new Error("Discord authentication failed");
+
+    playerStatusEl.textContent = `Playing as ${auth.user.global_name || auth.user.username}`;
+  } catch (error) {
+    console.warn(error);
+    playerStatusEl.textContent = "Leaderboard sign-in unavailable";
+  }
+}
+
+async function submitScore(score) {
+  if (!auth?.access_token) return;
+  try {
+    const result = await fetchJson("/api/score", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        score,
+        accessToken: auth.access_token,
+        context: {
+          guildId: discordSdk?.guildId || null,
+          channelId: discordSdk?.channelId || null,
+          instanceId: discordSdk?.instanceId || null
+        }
+      })
+    });
+    renderLeaderboard(result.leaderboard);
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+async function refreshLeaderboard() {
+  try {
+    const result = await fetchJson("/api/leaderboard");
+    renderLeaderboard(result.leaderboard);
+  } catch {
+    leaderboardListEl.innerHTML = "<li>Scores unavailable</li>";
+  }
+}
+
+function renderLeaderboard(entries) {
+  if (!entries?.length) {
+    leaderboardListEl.innerHTML = "<li>No scores yet</li>";
+    return;
+  }
+
+  leaderboardListEl.innerHTML = entries
+    .slice(0, 10)
+    .map((entry, index) => `
+      <li>
+        <span class="rank">${index + 1}</span>
+        <span class="name">${escapeHtml(entry.username)}</span>
+        <span class="score">${Number(entry.score).toLocaleString()}</span>
+      </li>
+    `)
+    .join("");
+}
+
+async function fetchJson(url, options) {
+  const response = await fetch(url, options);
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || "Request failed");
+  return payload;
+}
+
+function isDiscordActivity() {
+  const params = new URLSearchParams(window.location.search);
+  return params.has("frame_id") || params.has("instance_id") || params.has("channel_id");
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+setupDiscord();
+refreshLeaderboard();
+setInterval(refreshLeaderboard, 5000);
 draw();
 requestAnimationFrame(loop);
