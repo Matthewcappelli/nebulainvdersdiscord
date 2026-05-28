@@ -1,3 +1,5 @@
+import { DiscordSDK } from "@discord/embedded-app-sdk";
+
 const canvas = document.querySelector("#game");
 const ctx = canvas.getContext("2d");
 const overlay = document.querySelector("#overlay");
@@ -12,7 +14,6 @@ const leaderboardListEl = document.querySelector("#leaderboardList");
 
 const WIDTH = canvas.width;
 const HEIGHT = canvas.height;
-const DISCORD_SDK_URL = "https://esm.sh/@discord/embedded-app-sdk@1.10.0";
 const keys = new Set();
 const petals = Array.from({ length: 130 }, () => makePetal(true));
 
@@ -443,7 +444,6 @@ async function setupDiscord() {
       return;
     }
 
-    const { DiscordSDK } = await import(DISCORD_SDK_URL);
     discordSdk = new DiscordSDK(discordConfig.discordClientId);
     await discordSdk.ready();
 
@@ -467,7 +467,7 @@ async function setupDiscord() {
     playerStatusEl.textContent = `Playing as ${auth.user.global_name || auth.user.username}`;
   } catch (error) {
     console.warn(error);
-    playerStatusEl.textContent = "Leaderboard sign-in unavailable";
+    playerStatusEl.textContent = getDiscordErrorMessage(error);
   }
 }
 
@@ -539,6 +539,20 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function getDiscordErrorMessage(error) {
+  const message = String(error?.message || error || "");
+  if (message.includes("Missing DISCORD_CLIENT_SECRET")) {
+    return "Set DISCORD_CLIENT_SECRET in Railway";
+  }
+  if (message.includes("Discord authorization failed")) {
+    return "Discord authorization failed";
+  }
+  if (message.includes("Failed to fetch")) {
+    return "Cannot reach auth server";
+  }
+  return "Discord sign-in failed";
 }
 
 setupDiscord();

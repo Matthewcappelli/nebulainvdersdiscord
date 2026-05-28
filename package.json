@@ -4,9 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.mjs"
+    "build": "esbuild src/game.js --bundle --format=esm --outfile=dist/game.js",
+    "start": "npm run build && node server.mjs"
   },
   "dependencies": {
+    "@discord/embedded-app-sdk": "^2.5.0",
+    "esbuild": "^0.28.0",
     "pg": "^8.21.0"
   }
 }
