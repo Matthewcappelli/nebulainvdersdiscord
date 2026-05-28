@@ -29,5 +29,5 @@ createServer((request, response) => {
   });
   createReadStream(filePath).pipe(response);
 }).listen(port, "0.0.0.0", () => {
-  console.log(`Nebula Invaders running on 0.0.0.0:${port}`);
+  console.log(`Sakura Invaders running on 0.0.0.0:${port}`);
 });

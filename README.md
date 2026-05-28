@@ -1,6 +1,6 @@
-# Nebula Invaders
+# Sakura Invaders
 
-A dependency-free Space Invaders-style browser game made for Discord hangouts.
+A dependency-free sakura-themed arcade shooter made for Discord hangouts.
 
 ## Run locally
 

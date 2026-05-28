@@ -11,17 +11,24 @@ const touchKeys = document.querySelectorAll(".touch-key");
 const WIDTH = canvas.width;
 const HEIGHT = canvas.height;
 const keys = new Set();
-const stars = Array.from({ length: 120 }, () => ({
-  x: Math.random() * WIDTH,
-  y: Math.random() * HEIGHT,
-  size: Math.random() * 1.8 + 0.4,
-  speed: Math.random() * 28 + 12
-}));
+const petals = Array.from({ length: 130 }, () => makePetal(true));
 
 let state;
 let lastTime = 0;
-let best = Number(localStorage.getItem("nebulaInvadersBest") || 0);
+let best = Number(localStorage.getItem("sakuraInvadersBest") || 0);
 bestEl.textContent = best;
+
+function makePetal(randomY = false) {
+  return {
+    x: Math.random() * WIDTH,
+    y: randomY ? Math.random() * HEIGHT : -20,
+    size: Math.random() * 5 + 3,
+    speed: Math.random() * 34 + 20,
+    drift: Math.random() * 34 + 16,
+    sway: Math.random() * Math.PI * 2,
+    spin: Math.random() * Math.PI
+  };
+}
 
 function reset() {
   state = {
@@ -34,7 +41,7 @@ function reset() {
     invaderDir: 1,
     invaderStepDown: 26,
     shootTimer: 0,
-    player: { x: WIDTH / 2 - 28, y: HEIGHT - 72, w: 56, h: 22, cooldown: 0 },
+    player: { x: WIDTH / 2 - 30, y: HEIGHT - 72, w: 60, h: 24, cooldown: 0 },
     bullets: [],
     enemyBullets: [],
     particles: [],
@@ -58,7 +65,7 @@ function makeWave(wave) {
       x: startX + col * gapX,
       y: 78 + row * gapY,
       w: 38,
-      h: 24,
+      h: 26,
       row,
       alive: true,
       wobble: Math.random() * Math.PI * 2
@@ -89,7 +96,8 @@ function spawnBurst(x, y, color, count = 14) {
       vx: (Math.random() - 0.5) * 220,
       vy: (Math.random() - 0.5) * 220,
       life: Math.random() * 0.5 + 0.35,
-      color
+      color,
+      size: Math.random() * 4 + 3
     });
   }
 }
@@ -98,7 +106,7 @@ function firePlayer() {
   if (!state?.running || state.paused || state.gameOver) return;
   const player = state.player;
   if (player.cooldown > 0) return;
-  state.bullets.push({ x: player.x + player.w / 2 - 3, y: player.y - 14, w: 6, h: 18, vy: -520 });
+  state.bullets.push({ x: player.x + player.w / 2 - 4, y: player.y - 18, w: 8, h: 20, vy: -540 });
   player.cooldown = 0.22;
 }
 
@@ -106,19 +114,12 @@ function enemyFire() {
   const living = state.invaders.filter((invader) => invader.alive);
   if (!living.length) return;
   const shooter = living[Math.floor(Math.random() * living.length)];
-  state.enemyBullets.push({ x: shooter.x + shooter.w / 2 - 4, y: shooter.y + shooter.h, w: 8, h: 16, vy: 190 + state.wave * 22 });
+  state.enemyBullets.push({ x: shooter.x + shooter.w / 2 - 5, y: shooter.y + shooter.h, w: 10, h: 16, vy: 190 + state.wave * 22 });
 }
 
 function update(dt) {
+  updatePetals(dt);
   if (!state || !state.running || state.paused || state.gameOver) return;
-
-  stars.forEach((star) => {
-    star.y += star.speed * dt;
-    if (star.y > HEIGHT) {
-      star.y = 0;
-      star.x = Math.random() * WIDTH;
-    }
-  });
 
   const player = state.player;
   const speed = 330;
@@ -168,6 +169,18 @@ function update(dt) {
   if (breach) endGame();
 }
 
+function updatePetals(dt) {
+  petals.forEach((petal, index) => {
+    petal.sway += dt * 1.8;
+    petal.spin += dt * 2.4;
+    petal.x += Math.sin(petal.sway) * petal.drift * dt;
+    petal.y += petal.speed * dt;
+    if (petal.y > HEIGHT + 24 || petal.x < -30 || petal.x > WIDTH + 30) {
+      petals[index] = makePetal(false);
+    }
+  });
+}
+
 function moveBullets(dt) {
   state.bullets.forEach((bullet) => {
     bullet.y += bullet.vy * dt;
@@ -186,7 +199,7 @@ function resolveCollisions() {
       invader.alive = false;
       bullet.dead = true;
       state.score += 20 + invader.row * 10;
-      spawnBurst(invader.x + invader.w / 2, invader.y + invader.h / 2, "#75f0cf");
+      spawnBurst(invader.x + invader.w / 2, invader.y + invader.h / 2, "#ffb3d2");
       updateHud();
       break;
     }
@@ -196,7 +209,7 @@ function resolveCollisions() {
     if (rectsHit(bullet, state.player)) {
       bullet.dead = true;
       state.lives -= 1;
-      spawnBurst(state.player.x + state.player.w / 2, state.player.y, "#f97373", 22);
+      spawnBurst(state.player.x + state.player.w / 2, state.player.y, "#ff6f91", 22);
       updateHud();
       if (state.lives <= 0) endGame();
     }
@@ -208,7 +221,7 @@ function resolveCollisions() {
       if (bullet.dead || !rectsHit(bullet, bunker)) continue;
       bullet.dead = true;
       bunker.hp -= 1;
-      spawnBurst(bullet.x, bullet.y, "#f8d56b", 5);
+      spawnBurst(bullet.x, bullet.y, "#f8d27a", 5);
     }
   }
 
@@ -232,10 +245,10 @@ function endGame() {
   state.running = false;
   if (state.score > best) {
     best = state.score;
-    localStorage.setItem("nebulaInvadersBest", String(best));
+    localStorage.setItem("sakuraInvadersBest", String(best));
   }
   updateHud();
-  overlay.querySelector("h1").textContent = "Game over";
+  overlay.querySelector("h1").textContent = "Garden overrun";
   overlay.querySelector("p").textContent = `Score ${state.score}. Wave ${state.wave}.`;
   startButton.textContent = "Play Again";
   overlay.classList.remove("hidden");
@@ -251,9 +264,9 @@ function draw() {
   drawParticles();
 
   if (state?.paused) {
-    ctx.fillStyle = "rgba(7, 10, 16, 0.64)";
+    ctx.fillStyle = "rgba(33, 14, 30, 0.66)";
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = "#fff7fb";
     ctx.font = "900 64px system-ui";
     ctx.textAlign = "center";
     ctx.fillText("Paused", WIDTH / 2, HEIGHT / 2);
@@ -262,31 +275,61 @@ function draw() {
 
 function drawBackground() {
   const gradient = ctx.createLinearGradient(0, 0, 0, HEIGHT);
-  gradient.addColorStop(0, "#080b13");
-  gradient.addColorStop(1, "#101926");
+  gradient.addColorStop(0, "#201428");
+  gradient.addColorStop(0.52, "#3d1d35");
+  gradient.addColorStop(1, "#181827");
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-  ctx.fillStyle = "#ffffff";
-  stars.forEach((star) => {
-    ctx.globalAlpha = Math.min(1, star.size / 2);
-    ctx.fillRect(star.x, star.y, star.size, star.size);
-  });
-  ctx.globalAlpha = 1;
+  ctx.fillStyle = "rgba(255, 230, 184, 0.88)";
+  ctx.beginPath();
+  ctx.arc(WIDTH - 130, 102, 46, 0, Math.PI * 2);
+  ctx.fill();
+
+  drawBranch(0, 92, 210, 42, 18);
+  drawBranch(WIDTH, 154, WIDTH - 250, 84, 16);
+
+  petals.forEach((petal) => drawPetal(petal.x, petal.y, petal.size, petal.spin, "rgba(255, 190, 217, 0.76)"));
+}
+
+function drawBranch(x1, y1, x2, y2, width) {
+  ctx.save();
+  ctx.strokeStyle = "#6d354a";
+  ctx.lineWidth = width;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.quadraticCurveTo((x1 + x2) / 2, y1 - 16, x2, y2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPetal(x, y, size, rotation, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, size * 0.72, size * 1.2, 0.35, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawPlayer() {
   if (!state) return;
   const p = state.player;
-  ctx.fillStyle = "#75f0cf";
+  ctx.fillStyle = "#ffb3d2";
   ctx.beginPath();
-  ctx.moveTo(p.x + p.w / 2, p.y - 18);
+  ctx.moveTo(p.x + p.w / 2, p.y - 20);
   ctx.lineTo(p.x + p.w, p.y + p.h);
   ctx.lineTo(p.x, p.y + p.h);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = "#d8fff5";
-  ctx.fillRect(p.x + 19, p.y + 5, 18, 7);
+
+  ctx.fillStyle = "#fff7fb";
+  ctx.fillRect(p.x + 19, p.y + 5, 22, 7);
+  ctx.fillStyle = "#f8d27a";
+  ctx.fillRect(p.x + 27, p.y - 5, 6, 12);
 }
 
 function drawInvaders() {
@@ -294,12 +337,17 @@ function drawInvaders() {
   state.invaders.forEach((invader) => {
     if (!invader.alive) return;
     const pulse = Math.sin(invader.wobble) * 2;
-    ctx.fillStyle = invader.row % 2 ? "#9aa8ff" : "#ffcf70";
-    ctx.fillRect(invader.x + 6, invader.y + pulse, invader.w - 12, invader.h);
-    ctx.fillRect(invader.x, invader.y + 8 + pulse, invader.w, 10);
-    ctx.fillStyle = "#111827";
-    ctx.fillRect(invader.x + 10, invader.y + 9 + pulse, 5, 5);
-    ctx.fillRect(invader.x + invader.w - 15, invader.y + 9 + pulse, 5, 5);
+    const bodyColor = invader.row % 2 ? "#ff8fb8" : "#f8d27a";
+    const wingColor = invader.row % 2 ? "#ffd1e3" : "#ffe8aa";
+    drawPetal(invader.x + 7, invader.y + 12 + pulse, 8, -0.8, wingColor);
+    drawPetal(invader.x + invader.w - 7, invader.y + 12 + pulse, 8, 0.8, wingColor);
+    ctx.fillStyle = bodyColor;
+    ctx.beginPath();
+    ctx.roundRect(invader.x + 8, invader.y + pulse, invader.w - 16, invader.h, 9);
+    ctx.fill();
+    ctx.fillStyle = "#2b1220";
+    ctx.fillRect(invader.x + 14, invader.y + 10 + pulse, 5, 5);
+    ctx.fillRect(invader.x + invader.w - 19, invader.y + 10 + pulse, 5, 5);
   });
 }
 
@@ -308,27 +356,31 @@ function drawBunkers() {
   state.bunkers.forEach((bunker) => {
     if (bunker.hp <= 0) return;
     ctx.globalAlpha = 0.3 + bunker.hp / 12;
-    ctx.fillStyle = "#f8d56b";
-    ctx.fillRect(bunker.x, bunker.y + 14, bunker.w, bunker.h - 14);
-    ctx.clearRect(bunker.x + 38, bunker.y + 28, 28, 18);
+    ctx.fillStyle = "#7dd3b0";
+    ctx.fillRect(bunker.x, bunker.y + 18, bunker.w, bunker.h - 18);
+    ctx.fillStyle = "#ffb3d2";
+    ctx.fillRect(bunker.x + 12, bunker.y + 8, bunker.w - 24, 18);
+    ctx.clearRect(bunker.x + 38, bunker.y + 30, 28, 16);
     ctx.globalAlpha = 1;
   });
 }
 
 function drawBullets() {
   if (!state) return;
-  ctx.fillStyle = "#75f0cf";
-  state.bullets.forEach((bullet) => ctx.fillRect(bullet.x, bullet.y, bullet.w, bullet.h));
-  ctx.fillStyle = "#fb7185";
-  state.enemyBullets.forEach((bullet) => ctx.fillRect(bullet.x, bullet.y, bullet.w, bullet.h));
+  state.bullets.forEach((bullet) => drawPetal(bullet.x + bullet.w / 2, bullet.y + bullet.h / 2, 7, -0.25, "#fff0f6"));
+  ctx.fillStyle = "#ff6f91";
+  state.enemyBullets.forEach((bullet) => {
+    ctx.beginPath();
+    ctx.ellipse(bullet.x + bullet.w / 2, bullet.y + bullet.h / 2, bullet.w / 2, bullet.h / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
 }
 
 function drawParticles() {
   if (!state) return;
   state.particles.forEach((particle) => {
     ctx.globalAlpha = Math.max(0, particle.life * 1.8);
-    ctx.fillStyle = particle.color;
-    ctx.fillRect(particle.x, particle.y, 4, 4);
+    drawPetal(particle.x, particle.y, particle.size, particle.life * 8, particle.color);
   });
   ctx.globalAlpha = 1;
 }
@@ -342,8 +394,8 @@ function loop(time) {
 }
 
 startButton.addEventListener("click", () => {
-  overlay.querySelector("h1").textContent = "Defend the call.";
-  overlay.querySelector("p").textContent = "Clear waves, dodge plasma, and chase the lobby high score.";
+  overlay.querySelector("h1").textContent = "Guard the grove.";
+  overlay.querySelector("p").textContent = "Drift through blossom waves, send petal shots, and protect the moonlit garden.";
   startButton.textContent = "Start Game";
   reset();
 });

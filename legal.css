@@ -7,7 +7,7 @@
 .legal-document {
   display: grid;
   gap: 22px;
-  color: #e5edf7;
+  color: #fff7fb;
 }
 
 .legal-document h1 {
@@ -22,18 +22,18 @@
 }
 
 .legal-document p {
-  color: #cbd5e1;
+  color: #f5d7e4;
   line-height: 1.65;
 }
 
 .effective {
-  color: #75f0cf;
+  color: #ffb3d2;
   font-weight: 800;
 }
 
 .back-link {
   width: fit-content;
-  color: #75f0cf;
+  color: #ffb3d2;
   font-weight: 900;
   text-decoration: none;
 }
