@@ -3,11 +3,19 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import pg from "pg";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 const port = Number(process.env.PORT || 3000);
 const clientId = process.env.DISCORD_CLIENT_ID || "1509412850450567248";
 const leaderboardPath = join(root, "data", "leaderboard.json");
+const databaseUrl = process.env.DATABASE_URL;
+const pool = databaseUrl
+  ? new pg.Pool({
+      connectionString: databaseUrl,
+      ssl: databaseUrl.includes("railway.internal") ? false : { rejectUnauthorized: false }
+    })
+  : null;
 const types = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -114,25 +122,19 @@ async function submitScore(request, response) {
     return;
   }
 
-  const leaderboard = await readLeaderboard();
-  const existing = leaderboard.find((entry) => entry.userId === user.id);
   const entry = {
     userId: user.id,
     username: cleanName(user.global_name || user.username || "Discord Player"),
     avatar: user.avatar || null,
-    score: existing ? Math.max(existing.score, score) : score,
+    score,
     lastScore: score,
     updatedAt: new Date().toISOString(),
     context
   };
 
-  const next = existing
-    ? leaderboard.map((item) => (item.userId === user.id ? entry : item))
-    : [...leaderboard, entry];
-  next.sort((a, b) => b.score - a.score || a.username.localeCompare(b.username));
-
-  await writeLeaderboard(next.slice(0, 100));
-  sendJson(response, 200, { leaderboard: next.slice(0, 10), entry });
+  const savedEntry = await saveScore(entry);
+  const leaderboard = await readLeaderboard();
+  sendJson(response, 200, { leaderboard: leaderboard.slice(0, 10), entry: savedEntry });
 }
 
 async function fetchDiscordUser(accessToken) {
@@ -180,6 +182,35 @@ async function readJsonBody(request) {
 }
 
 async function readLeaderboard() {
+  if (pool) return readSqlLeaderboard();
+
+  try {
+    const raw = await readFile(leaderboardPath, "utf-8");
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveScore(entry) {
+  if (pool) return saveSqlScore(entry);
+
+  const leaderboard = await readFileLeaderboard();
+  const existing = leaderboard.find((item) => item.userId === entry.userId);
+  const savedEntry = {
+    ...entry,
+    score: existing ? Math.max(existing.score, entry.score) : entry.score
+  };
+  const next = existing
+    ? leaderboard.map((item) => (item.userId === entry.userId ? savedEntry : item))
+    : [...leaderboard, savedEntry];
+  next.sort((a, b) => b.score - a.score || a.username.localeCompare(b.username));
+  await writeLeaderboard(next.slice(0, 100));
+  return savedEntry;
+}
+
+async function readFileLeaderboard() {
   try {
     const raw = await readFile(leaderboardPath, "utf-8");
     const parsed = JSON.parse(raw);
@@ -192,6 +223,108 @@ async function readLeaderboard() {
 async function writeLeaderboard(leaderboard) {
   await mkdir(dirname(leaderboardPath), { recursive: true });
   await writeFile(leaderboardPath, `${JSON.stringify(leaderboard, null, 2)}\n`);
+}
+
+async function ensureLeaderboardTable() {
+  if (!pool) return;
+  await pool.query(`
+    create table if not exists leaderboard_scores (
+      user_id text primary key,
+      username text not null,
+      avatar text,
+      score integer not null default 0,
+      last_score integer not null default 0,
+      guild_id text,
+      channel_id text,
+      instance_id text,
+      updated_at timestamptz not null default now()
+    )
+  `);
+}
+
+async function readSqlLeaderboard() {
+  await ensureLeaderboardTable();
+  const result = await pool.query(`
+    select
+      user_id as "userId",
+      username,
+      avatar,
+      score,
+      last_score as "lastScore",
+      guild_id as "guildId",
+      channel_id as "channelId",
+      instance_id as "instanceId",
+      updated_at as "updatedAt"
+    from leaderboard_scores
+    order by score desc, username asc
+    limit 10
+  `);
+  return result.rows.map(formatSqlEntry);
+}
+
+async function saveSqlScore(entry) {
+  await ensureLeaderboardTable();
+  const result = await pool.query(
+    `
+      insert into leaderboard_scores (
+        user_id,
+        username,
+        avatar,
+        score,
+        last_score,
+        guild_id,
+        channel_id,
+        instance_id,
+        updated_at
+      )
+      values ($1, $2, $3, $4, $4, $5, $6, $7, now())
+      on conflict (user_id) do update set
+        username = excluded.username,
+        avatar = excluded.avatar,
+        score = greatest(leaderboard_scores.score, excluded.score),
+        last_score = excluded.last_score,
+        guild_id = excluded.guild_id,
+        channel_id = excluded.channel_id,
+        instance_id = excluded.instance_id,
+        updated_at = now()
+      returning
+        user_id as "userId",
+        username,
+        avatar,
+        score,
+        last_score as "lastScore",
+        guild_id as "guildId",
+        channel_id as "channelId",
+        instance_id as "instanceId",
+        updated_at as "updatedAt"
+    `,
+    [
+      entry.userId,
+      entry.username,
+      entry.avatar,
+      entry.score,
+      entry.context.guildId,
+      entry.context.channelId,
+      entry.context.instanceId
+    ]
+  );
+  return formatSqlEntry(result.rows[0]);
+}
+
+function formatSqlEntry(row) {
+  return {
+    userId: row.userId,
+    username: row.username,
+    avatar: row.avatar,
+    score: Number(row.score),
+    lastScore: Number(row.lastScore),
+    updatedAt: row.updatedAt,
+    context: {
+      guildId: row.guildId,
+      channelId: row.channelId,
+      instanceId: row.instanceId
+    }
+  };
 }
 
 function sendJson(response, status, payload) {

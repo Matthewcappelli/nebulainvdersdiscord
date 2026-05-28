@@ -26,11 +26,14 @@ Use these hosted pages for Discord verification:
 The shared leaderboard uses Discord Activity authentication. Set these Railway variables:
 
 ```txt
+DATABASE_URL=${{Postgres.DATABASE_URL}}
 DISCORD_CLIENT_ID=1509412850450567248
 DISCORD_CLIENT_SECRET=your Discord OAuth2 Client Secret
 ```
 
 The client ID is public. Never commit the client secret to GitHub.
+
+When `DATABASE_URL` is present, scores are stored in PostgreSQL. Local development falls back to `data/leaderboard.json`.
 
 ## Controls
 
