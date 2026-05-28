@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#111827">
+    <meta property="og:title" content="Nebula Invaders">
+    <meta property="og:description" content="A fast Space Invaders arcade game made for Discord hangouts.">
+    <title>Nebula Invaders</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="stage" aria-label="Nebula Invaders game">
+        <canvas id="game" width="960" height="720"></canvas>
+        <div class="touch-controls" aria-label="Touch controls">
+          <button class="touch-key" data-key="arrowleft" type="button" aria-label="Move left">←</button>
+          <button class="touch-key fire" data-key=" " type="button" aria-label="Fire">●</button>
+          <button class="touch-key" data-key="arrowright" type="button" aria-label="Move right">→</button>
+        </div>
+        <div class="overlay" id="overlay">
+          <div class="mark">Nebula Invaders</div>
+          <h1>Defend the call.</h1>
+          <p>Clear waves, dodge plasma, and chase the lobby high score.</p>
+          <button id="startButton" type="button">Start Game</button>
+        </div>
+      </section>
+
+      <aside class="panel" aria-label="Game status">
+        <div class="brand">
+          <span class="dot"></span>
+          <span>Nebula Invaders</span>
+        </div>
+
+        <dl class="stats">
+          <div>
+            <dt>Score</dt>
+            <dd id="score">0</dd>
+          </div>
+          <div>
+            <dt>Wave</dt>
+            <dd id="wave">1</dd>
+          </div>
+          <div>
+            <dt>Lives</dt>
+            <dd id="lives">3</dd>
+          </div>
+          <div>
+            <dt>Best</dt>
+            <dd id="best">0</dd>
+          </div>
+        </dl>
+
+        <div class="controls">
+          <h2>Controls</h2>
+          <p><kbd>A</kbd><kbd>D</kbd> or <kbd>←</kbd><kbd>→</kbd> move</p>
+          <p><kbd>Space</kbd> fires</p>
+          <p><kbd>P</kbd> pauses</p>
+        </div>
+
+        <div class="discord">
+          <h2>Discord Ready</h2>
+          <p>Host this folder and use the URL as a Discord Activity URL, or drop the link in a server for instant play.</p>
+        </div>
+      </aside>
+    </main>
+
+    <script src="src/game.js"></script>
+  </body>
+</html>
