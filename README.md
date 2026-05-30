@@ -20,6 +20,7 @@ Use these hosted pages for Discord verification:
 
 - Terms of Service: `/terms.html`
 - Privacy Policy: `/privacy.html`
+- Install URL: `/install`
 
 ## Leaderboard setup
 

@@ -27,6 +27,11 @@ createServer(async (request, response) => {
   try {
     const url = new URL(request.url || "/", `http://${request.headers.host}`);
 
+    if (url.pathname === "/install" || url.pathname === "/invite") {
+      redirectToInstall(response);
+      return;
+    }
+
     if (url.pathname.startsWith("/api/")) {
       await handleApi(request, response, url);
       return;
@@ -64,6 +69,19 @@ async function handleApi(request, response, url) {
   }
 
   sendJson(response, 404, { error: "Not found" });
+}
+
+function redirectToInstall(response) {
+  const installUrl = new URL("https://discord.com/oauth2/authorize");
+  installUrl.searchParams.set("client_id", clientId);
+  installUrl.searchParams.set("scope", "applications.commands");
+  installUrl.searchParams.set("integration_type", "0");
+
+  response.writeHead(302, {
+    location: installUrl.toString(),
+    "cache-control": "no-store"
+  });
+  response.end();
 }
 
 async function exchangeDiscordToken(request, response) {
