@@ -10,8 +10,9 @@
 }
 
 body {
-  min-height: 100vh;
+  height: 100vh;
   margin: 0;
+  overflow: hidden;
   background:
     radial-gradient(circle at 18% 18%, rgba(255, 179, 210, 0.26), transparent 24rem),
     radial-gradient(circle at 82% 12%, rgba(255, 220, 145, 0.16), transparent 22rem),
@@ -20,20 +21,21 @@ body {
 
 .shell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 20px;
-  width: min(1280px, calc(100vw - 32px));
-  min-height: 100vh;
+  grid-template-columns: minmax(0, 1fr) clamp(220px, 24vw, 280px);
+  gap: clamp(10px, 1.5vw, 18px);
+  width: min(1280px, calc(100vw - 20px));
+  height: 100vh;
   margin: 0 auto;
-  padding: 24px 0;
+  padding: 10px 0;
   align-items: center;
 }
 
 .stage {
   position: relative;
   width: 100%;
+  max-height: calc(100vh - 20px);
   aspect-ratio: 4 / 3;
-  min-height: 360px;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid rgba(255, 204, 223, 0.24);
   border-radius: 8px;
@@ -83,8 +85,8 @@ canvas {
   display: grid;
   place-content: center;
   justify-items: center;
-  gap: 14px;
-  padding: 32px;
+  gap: 12px;
+  padding: clamp(16px, 3vw, 28px);
   text-align: center;
   background: linear-gradient(rgba(43, 18, 32, 0.28), rgba(25, 13, 25, 0.76));
 }
@@ -109,7 +111,7 @@ p {
 
 h1 {
   max-width: 12ch;
-  font-size: clamp(2.4rem, 7vw, 6.4rem);
+  font-size: clamp(2rem, 6vw, 5.4rem);
   line-height: 0.92;
 }
 
@@ -139,8 +141,11 @@ button:focus-visible {
 
 .panel {
   display: grid;
-  gap: 18px;
+  gap: 10px;
   align-content: start;
+  max-height: calc(100vh - 20px);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .brand,
@@ -158,8 +163,8 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 54px;
-  padding: 0 16px;
+  min-height: 44px;
+  padding: 0 12px;
   font-weight: 900;
 }
 
@@ -179,8 +184,8 @@ button:focus-visible {
 }
 
 .stats div {
-  min-height: 86px;
-  padding: 14px;
+  min-height: 66px;
+  padding: 10px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -200,8 +205,8 @@ dt {
 }
 
 dd {
-  margin: 6px 0 0;
-  font-size: 2rem;
+  margin: 3px 0 0;
+  font-size: clamp(1.4rem, 3vw, 1.8rem);
   font-weight: 900;
 }
 
@@ -209,8 +214,8 @@ dd {
 .discord,
 .leaderboard {
   display: grid;
-  gap: 10px;
-  padding: 16px;
+  gap: 7px;
+  padding: 12px;
 }
 
 h2 {
@@ -220,16 +225,18 @@ h2 {
 .controls p,
 .discord p {
   color: #f5d7e4;
-  font-size: 0.94rem;
-  line-height: 1.45;
+  font-size: 0.86rem;
+  line-height: 1.35;
 }
 
 .leaderboard ol {
   display: grid;
-  gap: 8px;
+  gap: 5px;
   margin: 0;
   padding: 0;
   list-style: none;
+  max-height: min(218px, 32vh);
+  overflow: hidden;
 }
 
 .leaderboard li {
@@ -237,9 +244,9 @@ h2 {
   grid-template-columns: 22px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
-  min-height: 30px;
+  min-height: 24px;
   color: #f5d7e4;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
 }
 
 .leaderboard .rank {
@@ -273,13 +280,25 @@ kbd {
 }
 
 @media (max-width: 900px) {
+  body {
+    overflow: auto;
+  }
+
   .shell {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100vh;
     align-content: start;
+  }
+
+  .stage,
+  .panel {
+    max-height: none;
   }
 
   .panel {
     grid-template-columns: 1fr 1fr;
+    overflow: visible;
   }
 
   .brand,
@@ -308,5 +327,25 @@ kbd {
 
   .stats div {
     min-height: 72px;
+  }
+}
+
+@media (max-height: 680px) and (min-width: 901px) {
+  .controls {
+    display: none;
+  }
+
+  .leaderboard ol {
+    max-height: 172px;
+  }
+}
+
+@media (max-height: 590px) and (min-width: 901px) {
+  .discord {
+    display: none;
+  }
+
+  .leaderboard ol {
+    max-height: 134px;
   }
 }
