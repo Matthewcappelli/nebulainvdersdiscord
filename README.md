@@ -45,7 +45,6 @@ Bot commands:
 
 - `/leaderboard` shows the current server's Sakura Invaders leaderboard.
 - `/setscorechannel channel:#channel` sets the score announcement channel for the server.
-- `/status type:<playing|watching|listening|competing> text:<text>` changes the bot's global Discord status.
 
 ## Controls
 
