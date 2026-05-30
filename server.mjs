@@ -22,6 +22,7 @@ const clientId = process.env.DISCORD_CLIENT_ID || "1509412850450567248";
 const botToken = process.env.DISCORD_BOT_TOKEN;
 const leaderboardPath = join(root, "data", "leaderboard.json");
 const settingsPath = join(root, "data", "guild-settings.json");
+const botSettingsPath = join(root, "data", "bot-settings.json");
 const databaseUrl = process.env.DATABASE_URL;
 const pool = databaseUrl
   ? new pg.Pool({
@@ -300,6 +301,18 @@ async function ensureGuildSettingsTable() {
   `);
 }
 
+async function ensureBotSettingsTable() {
+  if (!pool) return;
+  await pool.query(`
+    create table if not exists bot_settings (
+      key text primary key,
+      activity_type text not null,
+      activity_text text not null,
+      updated_at timestamptz not null default now()
+    )
+  `);
+}
+
 async function readSqlLeaderboard(scopeId) {
   await ensureLeaderboardTable();
   const result = await pool.query(
@@ -436,6 +449,7 @@ async function startDiscordBot() {
     discordClient = new Client({ intents: [GatewayIntentBits.Guilds] });
     discordClient.once(Events.ClientReady, async (client) => {
       console.log(`Discord bot ready as ${client.user.tag}`);
+      await restoreSavedBotStatus().catch((error) => console.warn("Could not restore bot status", error.message));
       await Promise.allSettled([...client.guilds.cache.keys()].map((guildId) => registerBotCommands(guildId)));
     });
     discordClient.on(Events.GuildCreate, (guild) => registerBotCommands(guild.id));
@@ -543,13 +557,15 @@ async function handleSetScoreChannelCommand(interaction) {
 
 async function handleStatusCommand(interaction) {
   const type = interaction.options.getString("type", true);
-  const text = interaction.options.getString("text", true).slice(0, 128);
-  const activityType = getActivityType(type);
+  const text = interaction.options.getString("text", true).trim().slice(0, 128);
 
-  discordClient.user.setPresence({
-    activities: [{ name: text, type: activityType }],
-    status: "online"
-  });
+  if (!text) {
+    await interaction.reply({ content: "Status text cannot be empty.", ephemeral: true });
+    return;
+  }
+
+  await saveBotStatus({ type, text });
+  applyBotStatus({ type, text });
 
   await interaction.reply({
     content: `Bot status updated to ${type} ${text}.`,
@@ -626,6 +642,69 @@ async function saveGuildSettings(guildId, patch) {
   await writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
 }
 
+async function readSavedBotStatus() {
+  if (pool) {
+    await ensureBotSettingsTable();
+    const result = await pool.query(
+      `
+        select activity_type as type, activity_text as text
+        from bot_settings
+        where key = 'presence'
+      `
+    );
+    return result.rows[0] || null;
+  }
+
+  try {
+    return JSON.parse(await readFile(botSettingsPath, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+async function saveBotStatus(status) {
+  const normalized = {
+    type: getActivityTypeName(status.type),
+    text: String(status.text || "").trim().slice(0, 128)
+  };
+
+  if (!normalized.text) return;
+
+  if (pool) {
+    await ensureBotSettingsTable();
+    await pool.query(
+      `
+        insert into bot_settings (key, activity_type, activity_text, updated_at)
+        values ('presence', $1, $2, now())
+        on conflict (key) do update set
+          activity_type = excluded.activity_type,
+          activity_text = excluded.activity_text,
+          updated_at = now()
+      `,
+      [normalized.type, normalized.text]
+    );
+    return;
+  }
+
+  await mkdir(dirname(botSettingsPath), { recursive: true });
+  await writeFile(botSettingsPath, `${JSON.stringify(normalized, null, 2)}\n`);
+}
+
+async function restoreSavedBotStatus() {
+  const status = await readSavedBotStatus();
+  if (!status?.text) return;
+  applyBotStatus(status);
+  console.log(`Restored bot status: ${getActivityTypeName(status.type)} ${status.text}`);
+}
+
+function applyBotStatus(status) {
+  if (!discordClient?.user || !status?.text) return;
+  discordClient.user.setPresence({
+    activities: [{ name: String(status.text).slice(0, 128), type: getActivityType(status.type) }],
+    status: "online"
+  });
+}
+
 async function readFileSettings() {
   try {
     return JSON.parse(await readFile(settingsPath, "utf-8"));
@@ -641,4 +720,8 @@ function getActivityType(type) {
     listening: ActivityType.Listening,
     competing: ActivityType.Competing
   }[type] ?? ActivityType.Playing;
+}
+
+function getActivityTypeName(type) {
+  return ["playing", "watching", "listening", "competing"].includes(type) ? type : "playing";
 }
