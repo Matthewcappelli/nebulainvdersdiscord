@@ -19,6 +19,7 @@ import pg from "pg";
 const root = fileURLToPath(new URL(".", import.meta.url));
 const port = Number(process.env.PORT || 3000);
 const clientId = process.env.DISCORD_CLIENT_ID || "1509412850450567248";
+const botOwnerUserId = process.env.BOT_OWNER_USER_ID || "506499260351774740";
 const botToken = process.env.DISCORD_BOT_TOKEN;
 const leaderboardPath = join(root, "data", "leaderboard.json");
 const settingsPath = join(root, "data", "guild-settings.json");
@@ -556,6 +557,11 @@ async function handleSetScoreChannelCommand(interaction) {
 }
 
 async function handleStatusCommand(interaction) {
+  if (interaction.user.id !== botOwnerUserId) {
+    await interaction.reply({ content: "Only the bot owner can change my status.", ephemeral: true });
+    return;
+  }
+
   const type = interaction.options.getString("type", true);
   const text = interaction.options.getString("text", true).trim().slice(0, 128);
 
