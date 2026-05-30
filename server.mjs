@@ -3,7 +3,17 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Client, Events, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from "discord.js";
+import {
+  ActivityType,
+  ChannelType,
+  Client,
+  Events,
+  GatewayIntentBits,
+  PermissionFlagsBits,
+  REST,
+  Routes,
+  SlashCommandBuilder
+} from "discord.js";
 import pg from "pg";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
@@ -11,6 +21,7 @@ const port = Number(process.env.PORT || 3000);
 const clientId = process.env.DISCORD_CLIENT_ID || "1509412850450567248";
 const botToken = process.env.DISCORD_BOT_TOKEN;
 const leaderboardPath = join(root, "data", "leaderboard.json");
+const settingsPath = join(root, "data", "guild-settings.json");
 const databaseUrl = process.env.DATABASE_URL;
 const pool = databaseUrl
   ? new pg.Pool({
@@ -278,6 +289,17 @@ async function ensureLeaderboardTable() {
   `);
 }
 
+async function ensureGuildSettingsTable() {
+  if (!pool) return;
+  await pool.query(`
+    create table if not exists guild_settings (
+      guild_id text primary key,
+      announcement_channel_id text,
+      updated_at timestamptz not null default now()
+    )
+  `);
+}
+
 async function readSqlLeaderboard(scopeId) {
   await ensureLeaderboardTable();
   const result = await pool.query(
@@ -414,7 +436,7 @@ async function startDiscordBot() {
     discordClient = new Client({ intents: [GatewayIntentBits.Guilds] });
     discordClient.once(Events.ClientReady, async (client) => {
       console.log(`Discord bot ready as ${client.user.tag}`);
-      await Promise.all([...client.guilds.cache.keys()].map((guildId) => registerBotCommands(guildId)));
+      await Promise.allSettled([...client.guilds.cache.keys()].map((guildId) => registerBotCommands(guildId)));
     });
     discordClient.on(Events.GuildCreate, (guild) => registerBotCommands(guild.id));
     discordClient.on(Events.InteractionCreate, handleInteraction);
@@ -430,6 +452,42 @@ async function registerBotCommands(guildId) {
     new SlashCommandBuilder()
       .setName("leaderboard")
       .setDescription("Show this server's Sakura Invaders leaderboard.")
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("setscorechannel")
+      .setDescription("Set where Sakura Invaders score announcements are posted.")
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+      .addChannelOption((option) =>
+        option
+          .setName("channel")
+          .setDescription("The channel for score announcements.")
+          .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+          .setRequired(true)
+      )
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("status")
+      .setDescription("Change the Sakura Invaders bot status.")
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+      .addStringOption((option) =>
+        option
+          .setName("type")
+          .setDescription("The status type.")
+          .addChoices(
+            { name: "Playing", value: "playing" },
+            { name: "Watching", value: "watching" },
+            { name: "Listening", value: "listening" },
+            { name: "Competing", value: "competing" }
+          )
+          .setRequired(true)
+      )
+      .addStringOption((option) =>
+        option
+          .setName("text")
+          .setDescription("The status text.")
+          .setMaxLength(128)
+          .setRequired(true)
+      )
       .toJSON()
   ];
 
@@ -437,8 +495,24 @@ async function registerBotCommands(guildId) {
 }
 
 async function handleInteraction(interaction) {
-  if (!interaction.isChatInputCommand() || interaction.commandName !== "leaderboard") return;
+  if (!interaction.isChatInputCommand()) return;
 
+  if (interaction.commandName === "leaderboard") {
+    await handleLeaderboardCommand(interaction);
+    return;
+  }
+
+  if (interaction.commandName === "setscorechannel") {
+    await handleSetScoreChannelCommand(interaction);
+    return;
+  }
+
+  if (interaction.commandName === "status") {
+    await handleStatusCommand(interaction);
+  }
+}
+
+async function handleLeaderboardCommand(interaction) {
   const scopeId = getLeaderboardScope(interaction.guildId).scopeId;
   const leaderboard = await readLeaderboard(scopeId);
 
@@ -453,11 +527,44 @@ async function handleInteraction(interaction) {
   });
 }
 
+async function handleSetScoreChannelCommand(interaction) {
+  if (!interaction.guildId) {
+    await interaction.reply({ content: "This command only works in a server.", ephemeral: true });
+    return;
+  }
+
+  const channel = interaction.options.getChannel("channel", true);
+  await saveGuildSettings(interaction.guildId, { announcementChannelId: channel.id });
+  await interaction.reply({
+    content: `Score announcements will now go to <#${channel.id}>.`,
+    ephemeral: true
+  });
+}
+
+async function handleStatusCommand(interaction) {
+  const type = interaction.options.getString("type", true);
+  const text = interaction.options.getString("text", true).slice(0, 128);
+  const activityType = getActivityType(type);
+
+  discordClient.user.setPresence({
+    activities: [{ name: text, type: activityType }],
+    status: "online"
+  });
+
+  await interaction.reply({
+    content: `Bot status updated to ${type} ${text}.`,
+    ephemeral: true
+  });
+}
+
 async function announceScore(entry) {
-  if (!discordClient || !entry.context.channelId) return;
+  if (!discordClient) return;
 
   try {
-    const channel = await discordClient.channels.fetch(entry.context.channelId);
+    const settings = entry.context.guildId ? await readGuildSettings(entry.context.guildId) : {};
+    const channelId = settings.announcementChannelId || entry.context.channelId;
+    if (!channelId) return;
+    const channel = await discordClient.channels.fetch(channelId);
     if (!channel?.isTextBased()) return;
     await channel.send({
       content: `<@${entry.userId}> finished Sakura Invaders with **${entry.lastScore.toLocaleString()}** points. Best on this server: **${entry.score.toLocaleString()}**.`,
@@ -475,4 +582,63 @@ function formatLeaderboardMessage(leaderboard, guildId) {
     .map((entry, index) => `${index + 1}. <@${entry.userId}> - **${entry.score.toLocaleString()}**`)
     .join("\n");
   return `**${title}**\n${lines}`;
+}
+
+async function readGuildSettings(guildId) {
+  if (!guildId) return {};
+  if (pool) {
+    await ensureGuildSettingsTable();
+    const result = await pool.query(
+      `
+        select announcement_channel_id as "announcementChannelId"
+        from guild_settings
+        where guild_id = $1
+      `,
+      [guildId]
+    );
+    return result.rows[0] || {};
+  }
+
+  const settings = await readFileSettings();
+  return settings[guildId] || {};
+}
+
+async function saveGuildSettings(guildId, patch) {
+  if (!guildId) return;
+  if (pool) {
+    await ensureGuildSettingsTable();
+    await pool.query(
+      `
+        insert into guild_settings (guild_id, announcement_channel_id, updated_at)
+        values ($1, $2, now())
+        on conflict (guild_id) do update set
+          announcement_channel_id = excluded.announcement_channel_id,
+          updated_at = now()
+      `,
+      [guildId, patch.announcementChannelId]
+    );
+    return;
+  }
+
+  const settings = await readFileSettings();
+  settings[guildId] = { ...settings[guildId], ...patch };
+  await mkdir(dirname(settingsPath), { recursive: true });
+  await writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+}
+
+async function readFileSettings() {
+  try {
+    return JSON.parse(await readFile(settingsPath, "utf-8"));
+  } catch {
+    return {};
+  }
+}
+
+function getActivityType(type) {
+  return {
+    playing: ActivityType.Playing,
+    watching: ActivityType.Watching,
+    listening: ActivityType.Listening,
+    competing: ActivityType.Competing
+  }[type] ?? ActivityType.Playing;
 }

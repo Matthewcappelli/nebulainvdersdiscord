@@ -41,6 +41,12 @@ Leaderboards are scoped per Discord server. If the Activity is launched outside 
 
 When `DISCORD_BOT_TOKEN` is set, the app also starts a Discord bot. It posts score results into the Activity channel and registers `/leaderboard` for each server. The install URL at `/install` includes both `bot` and `applications.commands` scopes with View Channel and Send Messages permissions.
 
+Bot commands:
+
+- `/leaderboard` shows the current server's Sakura Invaders leaderboard.
+- `/setscorechannel channel:#channel` sets the score announcement channel for the server.
+- `/status type:<playing|watching|listening|competing> text:<text>` changes the bot's global Discord status.
+
 ## Controls
 
 - Move: `A` / `D` or arrow keys
