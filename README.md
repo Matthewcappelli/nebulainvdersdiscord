@@ -30,6 +30,7 @@ The shared leaderboard uses Discord Activity authentication. Set these Railway v
 DATABASE_URL=${{Postgres.DATABASE_URL}}
 DISCORD_CLIENT_ID=1509412850450567248
 DISCORD_CLIENT_SECRET=your Discord OAuth2 Client Secret
+DISCORD_BOT_TOKEN=your Discord Bot Token
 ```
 
 The client ID is public. Never commit the client secret to GitHub.
@@ -37,6 +38,8 @@ The client ID is public. Never commit the client secret to GitHub.
 When `DATABASE_URL` is present, scores are stored in PostgreSQL. Local development falls back to `data/leaderboard.json`.
 
 Leaderboards are scoped per Discord server. If the Activity is launched outside a server, it falls back to a global leaderboard.
+
+When `DISCORD_BOT_TOKEN` is set, the app also starts a Discord bot. It posts score results into the Activity channel and registers `/leaderboard` for each server. The install URL at `/install` includes both `bot` and `applications.commands` scopes with View Channel and Send Messages permissions.
 
 ## Controls
 

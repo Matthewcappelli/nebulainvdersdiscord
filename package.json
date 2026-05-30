@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@discord/embedded-app-sdk": "^2.5.0",
+    "discord.js": "^14.26.4",
     "esbuild": "^0.28.0",
     "pg": "^8.21.0"
   }

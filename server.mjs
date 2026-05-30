@@ -3,11 +3,13 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Client, Events, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from "discord.js";
 import pg from "pg";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 const port = Number(process.env.PORT || 3000);
 const clientId = process.env.DISCORD_CLIENT_ID || "1509412850450567248";
+const botToken = process.env.DISCORD_BOT_TOKEN;
 const leaderboardPath = join(root, "data", "leaderboard.json");
 const databaseUrl = process.env.DATABASE_URL;
 const pool = databaseUrl
@@ -22,6 +24,7 @@ const types = {
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8"
 };
+let discordClient = null;
 
 createServer(async (request, response) => {
   try {
@@ -45,6 +48,8 @@ createServer(async (request, response) => {
 }).listen(port, "0.0.0.0", () => {
   console.log(`Sakura Invaders running on 0.0.0.0:${port}`);
 });
+
+startDiscordBot();
 
 async function handleApi(request, response, url) {
   if (request.method === "GET" && url.pathname === "/api/config") {
@@ -75,7 +80,8 @@ async function handleApi(request, response, url) {
 function redirectToInstall(response) {
   const installUrl = new URL("https://discord.com/oauth2/authorize");
   installUrl.searchParams.set("client_id", clientId);
-  installUrl.searchParams.set("scope", "applications.commands");
+  installUrl.searchParams.set("scope", "bot applications.commands");
+  installUrl.searchParams.set("permissions", "3072");
   installUrl.searchParams.set("integration_type", "0");
 
   response.writeHead(302, {
@@ -159,6 +165,7 @@ async function submitScore(request, response) {
 
   const savedEntry = await saveScore(entry);
   const leaderboard = await readLeaderboard(entry.scopeId);
+  announceScore(savedEntry);
   sendJson(response, 200, { leaderboard: leaderboard.slice(0, 10), entry: savedEntry });
 }
 
@@ -395,4 +402,77 @@ function getLeaderboardScope(guildId) {
   return {
     scopeId: typeof guildId === "string" && guildId ? `guild:${guildId.slice(0, 32)}` : "global"
   };
+}
+
+async function startDiscordBot() {
+  if (!botToken) {
+    console.log("Discord bot disabled: DISCORD_BOT_TOKEN is not set");
+    return;
+  }
+
+  try {
+    discordClient = new Client({ intents: [GatewayIntentBits.Guilds] });
+    discordClient.once(Events.ClientReady, async (client) => {
+      console.log(`Discord bot ready as ${client.user.tag}`);
+      await Promise.all([...client.guilds.cache.keys()].map((guildId) => registerBotCommands(guildId)));
+    });
+    discordClient.on(Events.GuildCreate, (guild) => registerBotCommands(guild.id));
+    discordClient.on(Events.InteractionCreate, handleInteraction);
+    await discordClient.login(botToken);
+  } catch (error) {
+    console.error("Discord bot failed to start", error);
+  }
+}
+
+async function registerBotCommands(guildId) {
+  const rest = new REST({ version: "10" }).setToken(botToken);
+  const commands = [
+    new SlashCommandBuilder()
+      .setName("leaderboard")
+      .setDescription("Show this server's Sakura Invaders leaderboard.")
+      .toJSON()
+  ];
+
+  await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
+}
+
+async function handleInteraction(interaction) {
+  if (!interaction.isChatInputCommand() || interaction.commandName !== "leaderboard") return;
+
+  const scopeId = getLeaderboardScope(interaction.guildId).scopeId;
+  const leaderboard = await readLeaderboard(scopeId);
+
+  if (!leaderboard.length) {
+    await interaction.reply("No Sakura Invaders scores yet for this server.");
+    return;
+  }
+
+  await interaction.reply({
+    content: formatLeaderboardMessage(leaderboard, interaction.guildId),
+    allowedMentions: { users: [] }
+  });
+}
+
+async function announceScore(entry) {
+  if (!discordClient || !entry.context.channelId) return;
+
+  try {
+    const channel = await discordClient.channels.fetch(entry.context.channelId);
+    if (!channel?.isTextBased()) return;
+    await channel.send({
+      content: `<@${entry.userId}> finished Sakura Invaders with **${entry.lastScore.toLocaleString()}** points. Best on this server: **${entry.score.toLocaleString()}**.`,
+      allowedMentions: { users: [entry.userId] }
+    });
+  } catch (error) {
+    console.warn("Could not announce score", error.message);
+  }
+}
+
+function formatLeaderboardMessage(leaderboard, guildId) {
+  const title = guildId ? "Sakura Invaders leaderboard for this server" : "Sakura Invaders leaderboard";
+  const lines = leaderboard
+    .slice(0, 10)
+    .map((entry, index) => `${index + 1}. <@${entry.userId}> - **${entry.score.toLocaleString()}**`)
+    .join("\n");
+  return `**${title}**\n${lines}`;
 }
