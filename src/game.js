@@ -523,7 +523,10 @@ function renderLeaderboard(entries) {
 async function fetchJson(url, options) {
   const response = await fetch(url, options);
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || "Request failed");
+  if (!response.ok) {
+    const detail = payload.detail ? `: ${payload.detail}` : "";
+    throw new Error(`${payload.error || "Request failed"}${detail}`);
+  }
   return payload;
 }
 
@@ -545,6 +548,12 @@ function getDiscordErrorMessage(error) {
   const message = String(error?.message || error || "");
   if (message.includes("Missing DISCORD_CLIENT_SECRET")) {
     return "Set DISCORD_CLIENT_SECRET in Railway";
+  }
+  if (message.includes("invalid_client")) {
+    return "Check Discord Client Secret";
+  }
+  if (message.includes("invalid_grant") || message.includes("redirect")) {
+    return "Add OAuth redirect https://127.0.0.1";
   }
   if (message.includes("Discord authorization failed")) {
     return "Discord authorization failed";

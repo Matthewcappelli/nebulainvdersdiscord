@@ -93,7 +93,12 @@ async function exchangeDiscordToken(request, response) {
   const payload = await tokenResponse.json();
 
   if (!tokenResponse.ok || !payload.access_token) {
-    sendJson(response, 401, { error: "Discord authorization failed" });
+    const detail = cleanDiscordError(payload);
+    console.warn("Discord token exchange failed", tokenResponse.status, detail);
+    sendJson(response, 401, {
+      error: "Discord authorization failed",
+      detail
+    });
     return;
   }
 
@@ -334,6 +339,15 @@ function sendJson(response, status, payload) {
 
 function cleanName(name) {
   return String(name).replace(/\s+/g, " ").trim().slice(0, 40) || "Discord Player";
+}
+
+function cleanDiscordError(payload) {
+  const error = typeof payload?.error === "string" ? payload.error : "unknown_error";
+  const description =
+    typeof payload?.error_description === "string"
+      ? payload.error_description.replace(/\s+/g, " ").trim()
+      : "";
+  return description ? `${error}: ${description}`.slice(0, 180) : error.slice(0, 180);
 }
 
 function sanitizeContext(context) {
