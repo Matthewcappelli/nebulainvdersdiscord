@@ -16,6 +16,7 @@ const WIDTH = canvas.width;
 const HEIGHT = canvas.height;
 const keys = new Set();
 const petals = Array.from({ length: 130 }, () => makePetal(true));
+const deviceQuery = window.matchMedia("(pointer: coarse), (max-width: 760px)");
 
 let state;
 let lastTime = 0;
@@ -25,6 +26,13 @@ let auth = null;
 let discordConfig = null;
 let activityContext = getActivityContext();
 bestEl.textContent = best;
+updateDeviceClass();
+deviceQuery.addEventListener("change", updateDeviceClass);
+
+function updateDeviceClass() {
+  document.documentElement.classList.toggle("touch-device", deviceQuery.matches);
+  document.documentElement.classList.toggle("desktop-device", !deviceQuery.matches);
+}
 
 function makePetal(randomY = false) {
   return {
@@ -435,7 +443,10 @@ touchKeys.forEach((button) => {
   button.addEventListener("pointerup", release);
   button.addEventListener("pointercancel", release);
   button.addEventListener("pointerleave", release);
+  button.addEventListener("contextmenu", (event) => event.preventDefault());
 });
+
+canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 
 async function setupDiscord() {
   try {
