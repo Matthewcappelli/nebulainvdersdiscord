@@ -53,6 +53,7 @@ function reset() {
     gameOver: false,
     score: 0,
     wave: 1,
+    waveMessage: 1.8,
     lives: 3,
     invaderDir: 1,
     invaderStepDown: 26,
@@ -69,20 +70,25 @@ function reset() {
 }
 
 function makeWave(wave) {
-  const rows = Math.min(3 + wave, 6);
-  const cols = 10;
-  const gapX = 58;
-  const gapY = 42;
+  const rows = Math.min(3 + wave, 7);
+  const cols = Math.min(9 + Math.floor(wave / 3), 12);
+  const gapX = Math.max(48, 58 - Math.min(wave, 6));
+  const gapY = 40;
   const startX = (WIDTH - (cols - 1) * gapX) / 2 - 20;
   return Array.from({ length: rows * cols }, (_, index) => {
     const row = Math.floor(index / cols);
     const col = index % cols;
+    const elite = wave >= 4 && row === 0 && col % 3 === wave % 3;
+    const hp = elite ? 2 + Math.floor((wave - 4) / 4) : 1;
     return {
       x: startX + col * gapX,
       y: 78 + row * gapY,
       w: 38,
       h: 26,
       row,
+      hp,
+      maxHp: hp,
+      phase: Math.random() * Math.PI * 2,
       alive: true,
       wobble: Math.random() * Math.PI * 2
     };
@@ -129,8 +135,49 @@ function firePlayer() {
 function enemyFire() {
   const living = state.invaders.filter((invader) => invader.alive);
   if (!living.length) return;
-  const shooter = living[Math.floor(Math.random() * living.length)];
-  state.enemyBullets.push({ x: shooter.x + shooter.w / 2 - 5, y: shooter.y + shooter.h, w: 10, h: 16, vy: 190 + state.wave * 22 });
+  const wave = state.wave;
+  const volleyCount = Math.min(1 + Math.floor(wave / 3), 4);
+  const shooters = pickShooters(living, volleyCount);
+  shooters.forEach((shooter, index) => {
+    const aimed = wave >= 3 && index === 0;
+    const bullet = makeEnemyBullet(shooter, aimed);
+    state.enemyBullets.push(bullet);
+
+    if (wave >= 6 && Math.random() < 0.32) {
+      state.enemyBullets.push({ ...bullet, vx: -80 - wave * 4 });
+      state.enemyBullets.push({ ...bullet, vx: 80 + wave * 4 });
+    }
+  });
+}
+
+function pickShooters(living, count) {
+  const frontLine = living.filter((candidate) => {
+    return !living.some((other) => other.alive && Math.abs(other.x - candidate.x) < 12 && other.y > candidate.y);
+  });
+  const pool = frontLine.length ? frontLine : living;
+  const shooters = [];
+  while (shooters.length < count && shooters.length < pool.length) {
+    const candidate = pool[Math.floor(Math.random() * pool.length)];
+    if (!shooters.includes(candidate)) shooters.push(candidate);
+  }
+  return shooters;
+}
+
+function makeEnemyBullet(shooter, aimed) {
+  const speed = 205 + state.wave * 28;
+  let vx = 0;
+  if (aimed) {
+    const targetX = state.player.x + state.player.w / 2;
+    vx = Math.max(-150, Math.min(150, (targetX - (shooter.x + shooter.w / 2)) * 0.42));
+  }
+  return {
+    x: shooter.x + shooter.w / 2 - 5,
+    y: shooter.y + shooter.h,
+    w: 10,
+    h: 16,
+    vx,
+    vy: speed
+  };
 }
 
 function update(dt) {
@@ -146,10 +193,13 @@ function update(dt) {
   if (keys.has(" ")) firePlayer();
 
   let edgeHit = false;
-  const invaderSpeed = 38 + state.wave * 10;
+  const invaderSpeed = 38 + state.wave * 12;
   state.invaders.forEach((invader) => {
     if (!invader.alive) return;
     invader.x += invaderSpeed * state.invaderDir * dt;
+    if (state.wave >= 5) {
+      invader.x += Math.sin(invader.wobble + invader.phase) * (4 + state.wave * 0.35) * dt * 18;
+    }
     invader.wobble += dt * 5;
     if (invader.x < 18 || invader.x + invader.w > WIDTH - 18) edgeHit = true;
   });
@@ -157,14 +207,14 @@ function update(dt) {
   if (edgeHit) {
     state.invaderDir *= -1;
     state.invaders.forEach((invader) => {
-      invader.y += state.invaderStepDown;
+      invader.y += state.invaderStepDown + Math.min(state.wave * 2, 18);
     });
   }
 
   state.shootTimer -= dt;
   if (state.shootTimer <= 0) {
     enemyFire();
-    state.shootTimer = Math.max(0.35, 1.4 - state.wave * 0.1 - Math.random() * 0.45);
+    state.shootTimer = Math.max(0.18, 1.25 - state.wave * 0.095 - Math.random() * 0.38);
   }
 
   moveBullets(dt);
@@ -173,6 +223,7 @@ function update(dt) {
 
   if (state.invaders.every((invader) => !invader.alive)) {
     state.wave += 1;
+    state.waveMessage = 1.5;
     state.invaderDir = 1;
     state.bullets = [];
     state.enemyBullets = [];
@@ -202,20 +253,27 @@ function moveBullets(dt) {
     bullet.y += bullet.vy * dt;
   });
   state.enemyBullets.forEach((bullet) => {
+    bullet.x += (bullet.vx || 0) * dt;
     bullet.y += bullet.vy * dt;
   });
   state.bullets = state.bullets.filter((bullet) => bullet.y + bullet.h > 0);
-  state.enemyBullets = state.enemyBullets.filter((bullet) => bullet.y < HEIGHT + 20);
+  state.enemyBullets = state.enemyBullets.filter((bullet) => bullet.y < HEIGHT + 20 && bullet.x > -30 && bullet.x < WIDTH + 30);
 }
 
 function resolveCollisions() {
   for (const bullet of state.bullets) {
     for (const invader of state.invaders) {
       if (!invader.alive || !rectsHit(bullet, invader)) continue;
-      invader.alive = false;
       bullet.dead = true;
-      state.score += 20 + invader.row * 10;
-      spawnBurst(invader.x + invader.w / 2, invader.y + invader.h / 2, "#ffb3d2");
+      invader.hp -= 1;
+      if (invader.hp <= 0) {
+        invader.alive = false;
+        state.score += 20 + invader.row * 10 + (invader.maxHp - 1) * 35;
+        spawnBurst(invader.x + invader.w / 2, invader.y + invader.h / 2, "#ffb3d2");
+      } else {
+        state.score += 8;
+        spawnBurst(invader.x + invader.w / 2, invader.y + invader.h / 2, "#fff0f6", 7);
+      }
       updateHud();
       break;
     }
@@ -246,6 +304,7 @@ function resolveCollisions() {
 }
 
 function updateParticles(dt) {
+  if (state?.waveMessage > 0) state.waveMessage -= dt;
   state.particles.forEach((particle) => {
     particle.x += particle.vx * dt;
     particle.y += particle.vy * dt;
@@ -279,6 +338,7 @@ function draw() {
   drawInvaders();
   drawBullets();
   drawParticles();
+  drawWaveMessage();
 
   if (state?.paused) {
     ctx.fillStyle = "rgba(33, 14, 30, 0.66)";
@@ -354,8 +414,9 @@ function drawInvaders() {
   state.invaders.forEach((invader) => {
     if (!invader.alive) return;
     const pulse = Math.sin(invader.wobble) * 2;
-    const bodyColor = invader.row % 2 ? "#ff8fb8" : "#f8d27a";
-    const wingColor = invader.row % 2 ? "#ffd1e3" : "#ffe8aa";
+    const elite = invader.maxHp > 1;
+    const bodyColor = elite ? "#fff0f6" : invader.row % 2 ? "#ff8fb8" : "#f8d27a";
+    const wingColor = elite ? "#ff6f91" : invader.row % 2 ? "#ffd1e3" : "#ffe8aa";
     drawPetal(invader.x + 7, invader.y + 12 + pulse, 8, -0.8, wingColor);
     drawPetal(invader.x + invader.w - 7, invader.y + 12 + pulse, 8, 0.8, wingColor);
     ctx.fillStyle = bodyColor;
@@ -365,6 +426,10 @@ function drawInvaders() {
     ctx.fillStyle = "#2b1220";
     ctx.fillRect(invader.x + 14, invader.y + 10 + pulse, 5, 5);
     ctx.fillRect(invader.x + invader.w - 19, invader.y + 10 + pulse, 5, 5);
+    if (elite) {
+      ctx.fillStyle = "#ff6f91";
+      ctx.fillRect(invader.x + 15, invader.y + invader.h - 2 + pulse, Math.max(4, (invader.w - 30) * (invader.hp / invader.maxHp)), 3);
+    }
   });
 }
 
@@ -400,6 +465,19 @@ function drawParticles() {
     drawPetal(particle.x, particle.y, particle.size, particle.life * 8, particle.color);
   });
   ctx.globalAlpha = 1;
+}
+
+function drawWaveMessage() {
+  if (!state?.waveMessage || state.waveMessage <= 0 || state.paused) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, state.waveMessage);
+  ctx.fillStyle = "rgba(43, 18, 32, 0.54)";
+  ctx.fillRect(WIDTH / 2 - 140, 20, 280, 48);
+  ctx.fillStyle = "#fff7fb";
+  ctx.font = "900 24px system-ui";
+  ctx.textAlign = "center";
+  ctx.fillText(`Wave ${state.wave}`, WIDTH / 2, 52);
+  ctx.restore();
 }
 
 function loop(time) {
