@@ -450,10 +450,12 @@ async function startDiscordBot() {
     discordClient.once(Events.ClientReady, async (client) => {
       console.log(`Discord bot ready as ${client.user.tag}`);
       await restoreSavedBotStatus().catch((error) => console.warn("Could not restore bot status", error.message));
-      await registerBotCommands();
+      await registerBotCommands().catch((error) => console.warn("Could not register bot commands", error.message));
       await Promise.allSettled([...client.guilds.cache.keys()].map((guildId) => clearGuildBotCommands(guildId)));
     });
-    discordClient.on(Events.GuildCreate, (guild) => clearGuildBotCommands(guild.id));
+    discordClient.on(Events.GuildCreate, (guild) =>
+      clearGuildBotCommands(guild.id).catch((error) => console.warn("Could not clear guild bot commands", error.message))
+    );
     discordClient.on(Events.InteractionCreate, handleInteraction);
     await discordClient.login(botToken);
   } catch (error) {
@@ -479,10 +481,27 @@ async function registerBotCommands() {
           .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
           .setRequired(true)
       )
-      .toJSON(),
+      .toJSON()
   ];
 
-  await rest.put(Routes.applicationCommands(clientId), { body: commands });
+  const existingCommands = await rest.get(Routes.applicationCommands(clientId));
+  const existingSlashCommands = Array.isArray(existingCommands)
+    ? existingCommands.filter((command) => command.type === 1)
+    : [];
+
+  for (const command of commands) {
+    const existingCommand = existingSlashCommands.find((existing) => existing.name === command.name);
+    if (existingCommand) {
+      await rest.patch(Routes.applicationCommand(clientId, existingCommand.id), { body: command });
+    } else {
+      await rest.post(Routes.applicationCommands(clientId), { body: command });
+    }
+  }
+
+  const oldStatusCommand = existingSlashCommands.find((command) => command.name === "status");
+  if (oldStatusCommand) {
+    await rest.delete(Routes.applicationCommand(clientId, oldStatusCommand.id));
+  }
 }
 
 async function clearGuildBotCommands(guildId) {
