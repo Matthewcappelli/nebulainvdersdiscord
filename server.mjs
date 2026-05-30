@@ -19,7 +19,6 @@ import pg from "pg";
 const root = fileURLToPath(new URL(".", import.meta.url));
 const port = Number(process.env.PORT || 3000);
 const clientId = process.env.DISCORD_CLIENT_ID || "1509412850450567248";
-const botOwnerUserId = process.env.BOT_OWNER_USER_ID || "506499260351774740";
 const botToken = process.env.DISCORD_BOT_TOKEN;
 const leaderboardPath = join(root, "data", "leaderboard.json");
 const settingsPath = join(root, "data", "guild-settings.json");
@@ -451,9 +450,10 @@ async function startDiscordBot() {
     discordClient.once(Events.ClientReady, async (client) => {
       console.log(`Discord bot ready as ${client.user.tag}`);
       await restoreSavedBotStatus().catch((error) => console.warn("Could not restore bot status", error.message));
-      await Promise.allSettled([...client.guilds.cache.keys()].map((guildId) => registerBotCommands(guildId)));
+      await registerBotCommands();
+      await Promise.allSettled([...client.guilds.cache.keys()].map((guildId) => clearGuildBotCommands(guildId)));
     });
-    discordClient.on(Events.GuildCreate, (guild) => registerBotCommands(guild.id));
+    discordClient.on(Events.GuildCreate, (guild) => clearGuildBotCommands(guild.id));
     discordClient.on(Events.InteractionCreate, handleInteraction);
     await discordClient.login(botToken);
   } catch (error) {
@@ -461,7 +461,7 @@ async function startDiscordBot() {
   }
 }
 
-async function registerBotCommands(guildId) {
+async function registerBotCommands() {
   const rest = new REST({ version: "10" }).setToken(botToken);
   const commands = [
     new SlashCommandBuilder()
@@ -480,33 +480,14 @@ async function registerBotCommands(guildId) {
           .setRequired(true)
       )
       .toJSON(),
-    new SlashCommandBuilder()
-      .setName("status")
-      .setDescription("Change the Sakura Invaders bot status.")
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-      .addStringOption((option) =>
-        option
-          .setName("type")
-          .setDescription("The status type.")
-          .addChoices(
-            { name: "Playing", value: "playing" },
-            { name: "Watching", value: "watching" },
-            { name: "Listening", value: "listening" },
-            { name: "Competing", value: "competing" }
-          )
-          .setRequired(true)
-      )
-      .addStringOption((option) =>
-        option
-          .setName("text")
-          .setDescription("The status text.")
-          .setMaxLength(128)
-          .setRequired(true)
-      )
-      .toJSON()
   ];
 
-  await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
+  await rest.put(Routes.applicationCommands(clientId), { body: commands });
+}
+
+async function clearGuildBotCommands(guildId) {
+  const rest = new REST({ version: "10" }).setToken(botToken);
+  await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: [] });
 }
 
 async function handleInteraction(interaction) {
@@ -522,9 +503,6 @@ async function handleInteraction(interaction) {
     return;
   }
 
-  if (interaction.commandName === "status") {
-    await handleStatusCommand(interaction);
-  }
 }
 
 async function handleLeaderboardCommand(interaction) {
@@ -552,29 +530,6 @@ async function handleSetScoreChannelCommand(interaction) {
   await saveGuildSettings(interaction.guildId, { announcementChannelId: channel.id });
   await interaction.reply({
     content: `Score announcements will now go to <#${channel.id}>.`,
-    ephemeral: true
-  });
-}
-
-async function handleStatusCommand(interaction) {
-  if (interaction.user.id !== botOwnerUserId) {
-    await interaction.reply({ content: "Only the bot owner can change my status.", ephemeral: true });
-    return;
-  }
-
-  const type = interaction.options.getString("type", true);
-  const text = interaction.options.getString("text", true).trim().slice(0, 128);
-
-  if (!text) {
-    await interaction.reply({ content: "Status text cannot be empty.", ephemeral: true });
-    return;
-  }
-
-  await saveBotStatus({ type, text });
-  applyBotStatus({ type, text });
-
-  await interaction.reply({
-    content: `Bot status updated to ${type} ${text}.`,
     ephemeral: true
   });
 }
