@@ -36,6 +36,8 @@ The client ID is public. Never commit the client secret to GitHub.
 
 When `DATABASE_URL` is present, scores are stored in PostgreSQL. Local development falls back to `data/leaderboard.json`.
 
+Leaderboards are scoped per Discord server. If the Activity is launched outside a server, it falls back to a global leaderboard.
+
 ## Controls
 
 - Move: `A` / `D` or arrow keys

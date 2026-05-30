@@ -53,7 +53,8 @@ async function handleApi(request, response, url) {
   }
 
   if (request.method === "GET" && url.pathname === "/api/leaderboard") {
-    const leaderboard = await readLeaderboard();
+    const scope = getLeaderboardScope(url.searchParams.get("guildId"));
+    const leaderboard = await readLeaderboard(scope.scopeId);
     sendJson(response, 200, { leaderboard: leaderboard.slice(0, 10) });
     return;
   }
@@ -146,6 +147,7 @@ async function submitScore(request, response) {
   }
 
   const entry = {
+    scopeId: getLeaderboardScope(context.guildId).scopeId,
     userId: user.id,
     username: cleanName(user.global_name || user.username || "Discord Player"),
     avatar: user.avatar || null,
@@ -156,7 +158,7 @@ async function submitScore(request, response) {
   };
 
   const savedEntry = await saveScore(entry);
-  const leaderboard = await readLeaderboard();
+  const leaderboard = await readLeaderboard(entry.scopeId);
   sendJson(response, 200, { leaderboard: leaderboard.slice(0, 10), entry: savedEntry });
 }
 
@@ -204,13 +206,16 @@ async function readJsonBody(request) {
   return body ? JSON.parse(body) : {};
 }
 
-async function readLeaderboard() {
-  if (pool) return readSqlLeaderboard();
+async function readLeaderboard(scopeId = "global") {
+  if (pool) return readSqlLeaderboard(scopeId);
 
   try {
     const raw = await readFile(leaderboardPath, "utf-8");
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((entry) => (entry.scopeId || "global") === scopeId)
+      .sort((a, b) => b.score - a.score || a.username.localeCompare(b.username));
   } catch {
     return [];
   }
@@ -220,15 +225,14 @@ async function saveScore(entry) {
   if (pool) return saveSqlScore(entry);
 
   const leaderboard = await readFileLeaderboard();
-  const existing = leaderboard.find((item) => item.userId === entry.userId);
+  const existing = leaderboard.find((item) => item.userId === entry.userId && (item.scopeId || "global") === entry.scopeId);
   const savedEntry = {
     ...entry,
     score: existing ? Math.max(existing.score, entry.score) : entry.score
   };
   const next = existing
-    ? leaderboard.map((item) => (item.userId === entry.userId ? savedEntry : item))
+    ? leaderboard.map((item) => (item.userId === entry.userId && (item.scopeId || "global") === entry.scopeId ? savedEntry : item))
     : [...leaderboard, savedEntry];
-  next.sort((a, b) => b.score - a.score || a.username.localeCompare(b.username));
   await writeLeaderboard(next.slice(0, 100));
   return savedEntry;
 }
@@ -251,8 +255,9 @@ async function writeLeaderboard(leaderboard) {
 async function ensureLeaderboardTable() {
   if (!pool) return;
   await pool.query(`
-    create table if not exists leaderboard_scores (
-      user_id text primary key,
+    create table if not exists server_leaderboard_scores (
+      scope_id text not null,
+      user_id text not null,
       username text not null,
       avatar text,
       score integer not null default 0,
@@ -260,15 +265,18 @@ async function ensureLeaderboardTable() {
       guild_id text,
       channel_id text,
       instance_id text,
-      updated_at timestamptz not null default now()
+      updated_at timestamptz not null default now(),
+      primary key (scope_id, user_id)
     )
   `);
 }
 
-async function readSqlLeaderboard() {
+async function readSqlLeaderboard(scopeId) {
   await ensureLeaderboardTable();
-  const result = await pool.query(`
+  const result = await pool.query(
+    `
     select
+      scope_id as "scopeId",
       user_id as "userId",
       username,
       avatar,
@@ -278,10 +286,13 @@ async function readSqlLeaderboard() {
       channel_id as "channelId",
       instance_id as "instanceId",
       updated_at as "updatedAt"
-    from leaderboard_scores
+    from server_leaderboard_scores
+    where scope_id = $1
     order by score desc, username asc
     limit 10
-  `);
+  `,
+    [scopeId]
+  );
   return result.rows.map(formatSqlEntry);
 }
 
@@ -289,7 +300,8 @@ async function saveSqlScore(entry) {
   await ensureLeaderboardTable();
   const result = await pool.query(
     `
-      insert into leaderboard_scores (
+      insert into server_leaderboard_scores (
+        scope_id,
         user_id,
         username,
         avatar,
@@ -300,17 +312,18 @@ async function saveSqlScore(entry) {
         instance_id,
         updated_at
       )
-      values ($1, $2, $3, $4, $4, $5, $6, $7, now())
-      on conflict (user_id) do update set
+      values ($1, $2, $3, $4, $5, $5, $6, $7, $8, now())
+      on conflict (scope_id, user_id) do update set
         username = excluded.username,
         avatar = excluded.avatar,
-        score = greatest(leaderboard_scores.score, excluded.score),
+        score = greatest(server_leaderboard_scores.score, excluded.score),
         last_score = excluded.last_score,
         guild_id = excluded.guild_id,
         channel_id = excluded.channel_id,
         instance_id = excluded.instance_id,
         updated_at = now()
       returning
+        scope_id as "scopeId",
         user_id as "userId",
         username,
         avatar,
@@ -322,6 +335,7 @@ async function saveSqlScore(entry) {
         updated_at as "updatedAt"
     `,
     [
+      entry.scopeId,
       entry.userId,
       entry.username,
       entry.avatar,
@@ -336,6 +350,7 @@ async function saveSqlScore(entry) {
 
 function formatSqlEntry(row) {
   return {
+    scopeId: row.scopeId,
     userId: row.userId,
     username: row.username,
     avatar: row.avatar,
@@ -373,5 +388,11 @@ function sanitizeContext(context) {
     guildId: typeof context.guildId === "string" ? context.guildId.slice(0, 32) : null,
     channelId: typeof context.channelId === "string" ? context.channelId.slice(0, 32) : null,
     instanceId: typeof context.instanceId === "string" ? context.instanceId.slice(0, 120) : null
+  };
+}
+
+function getLeaderboardScope(guildId) {
+  return {
+    scopeId: typeof guildId === "string" && guildId ? `guild:${guildId.slice(0, 32)}` : "global"
   };
 }

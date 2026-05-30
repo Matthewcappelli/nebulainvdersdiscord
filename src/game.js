@@ -23,6 +23,7 @@ let best = Number(localStorage.getItem("sakuraInvadersBest") || 0);
 let discordSdk = null;
 let auth = null;
 let discordConfig = null;
+let activityContext = getActivityContext();
 bestEl.textContent = best;
 
 function makePetal(randomY = false) {
@@ -446,6 +447,8 @@ async function setupDiscord() {
 
     discordSdk = new DiscordSDK(discordConfig.discordClientId);
     await discordSdk.ready();
+    activityContext = getActivityContext();
+    refreshLeaderboard();
 
     const { code } = await discordSdk.commands.authorize({
       client_id: discordConfig.discordClientId,
@@ -465,6 +468,7 @@ async function setupDiscord() {
     if (!auth?.user) throw new Error("Discord authentication failed");
 
     playerStatusEl.textContent = `Playing as ${auth.user.global_name || auth.user.username}`;
+    refreshLeaderboard();
   } catch (error) {
     console.warn(error);
     playerStatusEl.textContent = getDiscordErrorMessage(error);
@@ -481,9 +485,9 @@ async function submitScore(score) {
         score,
         accessToken: auth.access_token,
         context: {
-          guildId: discordSdk?.guildId || null,
-          channelId: discordSdk?.channelId || null,
-          instanceId: discordSdk?.instanceId || null
+          guildId: activityContext.guildId,
+          channelId: activityContext.channelId,
+          instanceId: activityContext.instanceId
         }
       })
     });
@@ -495,7 +499,9 @@ async function submitScore(score) {
 
 async function refreshLeaderboard() {
   try {
-    const result = await fetchJson("/api/leaderboard");
+    const params = new URLSearchParams();
+    if (activityContext.guildId) params.set("guildId", activityContext.guildId);
+    const result = await fetchJson(`/api/leaderboard${params.size ? `?${params}` : ""}`);
     renderLeaderboard(result.leaderboard);
   } catch {
     leaderboardListEl.innerHTML = "<li>Scores unavailable</li>";
@@ -533,6 +539,15 @@ async function fetchJson(url, options) {
 function isDiscordActivity() {
   const params = new URLSearchParams(window.location.search);
   return params.has("frame_id") || params.has("instance_id") || params.has("channel_id");
+}
+
+function getActivityContext() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    guildId: discordSdk?.guildId || params.get("guild_id") || null,
+    channelId: discordSdk?.channelId || params.get("channel_id") || null,
+    instanceId: discordSdk?.instanceId || params.get("instance_id") || null
+  };
 }
 
 function escapeHtml(value) {
